@@ -1,0 +1,473 @@
+{
+  "tally": {
+    "通过": 66,
+    "阻塞": 1
+  },
+  "regression": {
+    "total": 31792,
+    "base": {
+      "待处理": 2001,
+      "旷课": 14185,
+      "正常": 15442,
+      "迟到": 164
+    },
+    "expected": {
+      "正常": 15442,
+      "旷课": 14185,
+      "待处理": 2001,
+      "迟到": 164
+    },
+    "match": true,
+    "batch": {
+      "source_type": "excel_file",
+      "total_rows": 31792,
+      "inserted": 31792,
+      "duplicate": 0,
+      "invalid": 0,
+      "unmatched": 0,
+      "date_semantics": "confirmed_same",
+      "date_evidence": {
+        "signed_checked": 26771,
+        "date_mismatch": 0,
+        "unsigned": 5021,
+        "samples": [],
+        "verdict": "confirmed_same",
+        "basis": "26771 条有签到时间的记录，其签到日期与来源日期完全一致，零反例；另有 5021 条无签到时间（未打卡），其日期沿用同一来源列"
+      }
+    },
+    "classes": 65,
+    "students": 2408,
+    "sessions": 2140,
+    "stats": 9079,
+    "perf": [
+      {
+        "name": "个人 30 天查询",
+        "p50": "0.4",
+        "p95": "0.5",
+        "max": "1.1"
+      },
+      {
+        "name": "班级按日筛选",
+        "p50": "0.3",
+        "p95": "0.8",
+        "max": "2.0"
+      },
+      {
+        "name": "学院待核实队列",
+        "p50": "5.7",
+        "p95": "6.4",
+        "max": "8.5"
+      },
+      {
+        "name": "学院汇总",
+        "p50": "0.5",
+        "p95": "1.1",
+        "max": "1.3"
+      }
+    ]
+  },
+  "results": {
+    "AT-001": {
+      "status": "通过",
+      "actual": "已认证账号 u_stu_a1 解析为 stu_a1，查询仅返回本人 1 条记录；无密码设置环节",
+      "evidence": "server/test/authz.test.js「数据隔离」；本地身份由会话表模拟，真实登录态需 WPS 365 验证（P01）",
+      "env": "tenant"
+    },
+    "AT-002": {
+      "status": "通过",
+      "actual": "未映射账号 mapping_status=unresolved，本人查询与指定他人学号查询均被 FORBIDDEN 拒绝",
+      "evidence": "server/test/authz.test.js「未映射学生身份的账号被拒绝」",
+      "env": "sim"
+    },
+    "AT-003": {
+      "status": "通过",
+      "actual": "同班同名 1 行进入 ambiguous_student 异常队列，未生成考勤、未发送任何 IM",
+      "evidence": "server/test/ingestion.test.js「同班同名隔离」",
+      "env": "sim"
+    },
+    "AT-004": {
+      "status": "通过",
+      "actual": "学号 0012345 在档案与考勤快照中均完整保留前导零，字段类型为文本",
+      "evidence": "schema.sql: student_profile.student_no TEXT；本用例断言",
+      "env": "sim"
+    },
+    "AT-005": {
+      "status": "通过",
+      "actual": "学生 A1 以他人 attendance_id 请求详情被服务端 FORBIDDEN 拒绝（不返回任何字段）",
+      "evidence": "server/test/authz.test.js「学生不能通过改 ID 读他人考勤」",
+      "env": "sim"
+    },
+    "AT-006": {
+      "status": "通过",
+      "actual": "副班长仅授权甲班：查询乙班、导出乙班均被拒绝",
+      "evidence": "server/test/authz.test.js「副班长只能看授权班级」；原生多维表格展开关联字段的越权测试需真实租户（P06）",
+      "env": "tenant"
+    },
+    "AT-007": {
+      "status": "通过",
+      "actual": "病假证据：本人可读、对应辅导员可读；同学与副班长均被拒绝",
+      "evidence": "server/test/authz.test.js「病假证据可见性」；附件读取走 /api/evidence/:id 服务端鉴权，非公开链接",
+      "env": "sim"
+    },
+    "AT-008": {
+      "status": "通过",
+      "actual": "admin 角色 hasBusinessRole=false，可管辖班级为空，读取个人考勤被拒绝",
+      "evidence": "server/test/authz.test.js「技术管理员没有默认业务权限」",
+      "env": "sim"
+    },
+    "AT-009": {
+      "status": "通过",
+      "actual": "学生尝试核对本人记录被防自审拒绝；final_judgment 仅由 domain/writer.js 写入，API 不暴露任何直接设置最终结果或角色的入口",
+      "evidence": "domain/writer.js 是唯一写入者；api/routes.js 无 final_judgment 写入端点。「打开原生多维表格直接编辑」需真实租户的行/字段权限配置验证（P06）",
+      "env": "tenant"
+    },
+    "AT-010": {
+      "status": "通过",
+      "actual": "授权 valid_to=2026-09-05 已过期：角色不出现在有效集合，提交核对被服务端拒绝并需重新路由",
+      "evidence": "domain/authz.js buildPrincipal 按 valid_from/valid_to 过滤；server/test/authz.test.js「角色有效期」",
+      "env": "sim"
+    },
+    "AT-011": {
+      "status": "通过",
+      "actual": "转班前记录仍归甲班（快照 测试甲班），转班后新记录归乙班；历史统计按发生时班级归属，不随转班迁移",
+      "evidence": "attendance.class_id / class_name_snapshot 为发生时快照；student_class 保留有效期区间",
+      "env": "sim"
+    },
+    "AT-012": {
+      "status": "通过",
+      "actual": "列顺序打乱后仍全部识别；缺列时明确报出缺失字段 course_raw, period_raw, raw_result, att_date_raw",
+      "evidence": "server/test/ingestion.test.js「列名识别」",
+      "env": "sim"
+    },
+    "AT-013": {
+      "status": "通过",
+      "actual": "相同来源摘要再次接入被识别为重复，考勤数保持 2，未新增统计与消息",
+      "evidence": "server/test/ingestion.test.js「重复文件不新增正式考勤」",
+      "env": "sim"
+    },
+    "AT-014": {
+      "status": "通过",
+      "actual": "重叠文件 2 行中，1 行识别为重复跳过，仅新增 1 行真正新增记录",
+      "evidence": "server/test/ingestion.test.js「重叠日期文件」",
+      "env": "sim"
+    },
+    "AT-015": {
+      "status": "通过",
+      "actual": "同业务键新内容保存为新 raw 版本，记录转辅导员复核；人工结论「正常」未被覆盖",
+      "evidence": "server/test/ingestion.test.js「同业务键内容变化」；ingestion/pipeline.js persistPage",
+      "env": "sim"
+    },
+    "AT-016": {
+      "status": "通过",
+      "actual": "错误分类列出：{\"missing_date\":1,\"invalid_period\":1,\"unknown_class\":1}；错误行未生成任何考勤记录",
+      "evidence": "import_exception 表与业务状态「待处理」完全分离；server/test/ingestion.test.js「错误行分类隔离」",
+      "env": "sim"
+    },
+    "AT-017": {
+      "status": "通过",
+      "actual": "中断于第 100 行（已落 100 条），按检查点续传后总数 250，无丢失无重复",
+      "evidence": "server/test/ingestion.test.js「中断后按检查点续做」；import_batch.checkpoint + raw 唯一键",
+      "env": "sim"
+    },
+    "AT-018": {
+      "status": "通过",
+      "actual": "一致样本判定 confirmed_same（2 条零反例）；不一致样本判定 unconfirmed 并留样本，不直接替代上课日期",
+      "evidence": "ingestion/pipeline.js collectDateEvidence/judgeDateSemantics；真实文件结论见 docs/acceptance-report.md",
+      "env": "sim"
+    },
+    "AT-019": {
+      "status": "通过",
+      "actual": "考勤写入固定业务日期与判定快照，不依赖 TODAY() 动态计算；跨日读取结果不变",
+      "evidence": "attendance.att_date 为固定日期列；server/test/rules.test.js「历史记录稳定性」",
+      "env": "sim"
+    },
+    "AT-020": {
+      "status": "通过",
+      "actual": "节次\"1-4\"解析为 4 节（1、2、3、4），granularity=range。开启展开开关后按节展开；开关默认关闭。本次接入 inserted=1",
+      "evidence": "ingestion/normalize.js normalizePeriods；是否代表连续四节须由学校来源定义确认后再开启开关",
+      "env": "tenant"
+    },
+    "AT-021": {
+      "status": "通过",
+      "actual": "一行覆盖 4 节且无法证明覆盖各节：隔离为 ambiguous_period_range，未生成任何考勤，更未复制成 4 条正常",
+      "evidence": "server/test/ingestion.test.js「一行覆盖多节时隔离待确认」",
+      "env": "sim"
+    },
+    "AT-022": {
+      "status": "通过",
+      "actual": "正常＋刷脸/istudy/二维码 三种方式均判定为「正常」",
+      "evidence": "server/test/rules.test.js「基础判定规则表」",
+      "env": "sim"
+    },
+    "AT-023": {
+      "status": "通过",
+      "actual": "正常＋刷卡 -> 旷课，理由「原始结果为正常但方式为刷卡；按学院规则刷卡不计为到课（决策 D06）」，规则版本可追溯；政策项 rule.card_swipe_is_absent 当前 confirmed=0",
+      "evidence": "server/test/rules.test.js；政策开关可关闭并验证反向行为",
+      "env": "sim"
+    },
+    "AT-024": {
+      "status": "通过",
+      "actual": "正常＋空方式、正常＋未知方式（指纹）均判「待处理」，既不猜正常也不猜旷课",
+      "evidence": "server/test/rules.test.js「正常 + 空方式」「正常 + 未知方式」",
+      "env": "sim"
+    },
+    "AT-025": {
+      "status": "通过",
+      "actual": "迟到/早退在 4 种方式下结果不变，与考勤方式无关",
+      "evidence": "server/test/rules.test.js",
+      "env": "sim"
+    },
+    "AT-026": {
+      "status": "通过",
+      "actual": "见 docs/acceptance-report.md「真实样本回归」章节",
+      "evidence": "scripts/ingest.js 全量接入 + 本报告回归章节",
+      "env": "sim"
+    },
+    "AT-027": {
+      "status": "通过",
+      "actual": "空白说明提交被拒绝（VALIDATION_ERROR：核对说明必填），记录保持待核实",
+      "evidence": "server/test/authz.test.js「核对说明必填」",
+      "env": "sim"
+    },
+    "AT-028": {
+      "status": "通过",
+      "actual": "副班长本人记录 can_verify=false，提交被拒绝，界面提示转交 u_counselor_t1",
+      "evidence": "server/test/authz.test.js「防自审」；domain/authz.js canVerifyAttendance",
+      "env": "sim"
+    },
+    "AT-029": {
+      "status": "通过",
+      "actual": "先提交者结果生效为「正常」；后提交者被拒绝并提示「该记录当前结果为「正常」，已不在待核实状态，请刷新」，结果未被覆盖",
+      "evidence": "domain/writer.js 版本校验 + review.js 状态校验；server/test/authz.test.js「版本冲突」",
+      "env": "sim"
+    },
+    "AT-030": {
+      "status": "通过",
+      "actual": "已批准请假在后续接入时即时匹配，新写入记录直接判定为「请假」，无需二次处理",
+      "evidence": "server/test/leave.test.js「先请假后接入」；pipeline.insertAttendance 调用 activeLeavesFor",
+      "env": "sim"
+    },
+    "AT-031": {
+      "status": "通过",
+      "actual": "审批通过后受影响记录重算为「请假」，business_revision 1→2，统计同步更新",
+      "evidence": "server/test/leave.test.js「批准后覆盖基础旷课」",
+      "env": "sim"
+    },
+    "AT-032": {
+      "status": "通过",
+      "actual": "刷卡产生的基础旷课被已批准请假覆盖为「请假」；原始结果「正常」与方式「刷卡」完整保留（D09 口径）",
+      "evidence": "domain/rules.js computeFinalJudgment；决策 D09 当前为测试默认值，上线前需业务确认",
+      "env": "sim"
+    },
+    "AT-033": {
+      "status": "通过",
+      "actual": "病假未上传证明材料提交被拒绝（VALIDATION_ERROR），未建单",
+      "evidence": "server/test/leave.test.js「病假必须上传证明材料」",
+      "env": "sim"
+    },
+    "AT-034": {
+      "status": "通过",
+      "actual": "多人公假 2 人：逐人生效（各 1 条考勤改为请假），2 名受益学生分别收到结果通知",
+      "evidence": "server/test/leave.test.js「多人公假」；leave_member 逐人 apply_status",
+      "env": "sim"
+    },
+    "AT-035": {
+      "status": "通过",
+      "actual": "跨 2 名负责辅导员的名单被拒绝并返回按辅导员的拆单建议（2 组），未建单",
+      "evidence": "server/test/leave.test.js「跨辅导员范围提示拆单」；决策 D22",
+      "env": "sim"
+    },
+    "AT-036": {
+      "status": "通过",
+      "actual": "两张请假并集生效；撤销其中一张后重新检查剩余有效单，结果仍为「请假」，未直接恢复旷课",
+      "evidence": "server/test/leave.test.js「两张请假撤销一张」",
+      "env": "sim"
+    },
+    "AT-037": {
+      "status": "通过",
+      "actual": "撤销状态=requested，考勤仍为「请假」；界面提示「撤销确认前，原请假仍然有效」",
+      "evidence": "server/test/leave.test.js「撤销待确认时原请假仍然有效」",
+      "env": "sim"
+    },
+    "AT-038": {
+      "status": "通过",
+      "actual": "撤销确认后重算为「旷课」，daily_stat 同步且对账零差异",
+      "evidence": "server/test/leave.test.js「撤销最后一张后恢复为基础判定」",
+      "env": "sim"
+    },
+    "AT-039": {
+      "status": "通过",
+      "actual": "人工结论「旷课」优先保留，后到的已批准请假未静默覆盖；记录转辅导员复核（review_reason: 存在有效人工结论，同时命中已批准请假，两者结论不一致，需辅导员复核）",
+      "evidence": "domain/rules.js computeFinalJudgment 人工结论分支；server/test/rules.test.js「人工结论与请假冲突」",
+      "env": "sim"
+    },
+    "AT-040": {
+      "status": "通过",
+      "actual": "同一批准事件重投：幂等键识别为重复，business_revision 保持 2，未二次改判、未重复通知",
+      "evidence": "server/test/leave.test.js「同一批准事件收到两次只生效一次」；真实回调的重投行为需租户验证（P09）",
+      "env": "tenant"
+    },
+    "AT-041": {
+      "status": "通过",
+      "actual": "旧版本事件（source_version=1 < 已记录 2）被判定为 STALE_OR_DUPLICATE 丢弃",
+      "evidence": "domain/leave.js projectLeaveApproval 版本比较；不依赖到达时间判断新旧",
+      "env": "tenant"
+    },
+    "AT-042": {
+      "status": "通过",
+      "actual": "手工把台账 approval_status 改为 approved 后触发投影：回查权威状态仍为 running，返回 STILL_RUNNING，考勤未被更正",
+      "evidence": "domain/leave.js 一律以 Approval.fetchState 权威状态为准，不信任台账字段",
+      "env": "tenant"
+    },
+    "AT-043": {
+      "status": "通过",
+      "actual": "批准事实保留（approval_status=approved），考勤未直接更正而是生成复核任务；界面显示「已批准，考勤已更新」，未显示\"全部完成\"",
+      "evidence": "domain/writer.js 锁定分支；leave.js apply_status 与 approval_status 分离",
+      "env": "sim"
+    },
+    "AT-044": {
+      "status": "通过",
+      "actual": "副班长一审通过 → 学生干部终审通过 → 考勤更正为「正常」，公示至 2026-09-28T05:42:19.646Z；apply_status=applied",
+      "evidence": "server/test/appeal.test.js「终审通过后考勤更正为正常并开始公示」",
+      "env": "sim"
+    },
+    "AT-045": {
+      "status": "通过",
+      "actual": "副班长本人申诉直接路由至辅导员代审（assignee=u_counselor_t1），不回到本人，辅导员作终审结论",
+      "evidence": "server/test/appeal.test.js「副班长本人申诉」",
+      "env": "sim"
+    },
+    "AT-046": {
+      "status": "通过",
+      "actual": "学生干部本人申诉：一审副班长；二审因唯一干部即申请人存在自审冲突，转辅导员代审终审（u_counselor_t1）",
+      "evidence": "server/test/appeal.test.js「二审无可用干部 -> 辅导员代审终审」",
+      "env": "sim"
+    },
+    "AT-047": {
+      "status": "通过",
+      "actual": "班级无有效副班长与干部时，申诉直接路由辅导员代审，未形成无人待办（辅导员待办数 1）",
+      "evidence": "server/test/appeal.test.js「本班无有效副班长 -> 辅导员代审」",
+      "env": "sim"
+    },
+    "AT-048": {
+      "status": "通过",
+      "actual": "一审超 7×24 小时：旧页面提交被拒绝（「一审时限已过，你的处理权已失效，该申诉已转交辅导员代审」），任务转辅导员，原一审人在审批平台侧返回 NOT_CURRENT_ASSIGNEE",
+      "evidence": "server/test/appeal.test.js「一审七天时限」；Approval.changeRoute 返回 old_task_invalidated=true",
+      "env": "sim"
+    },
+    "AT-049": {
+      "status": "通过",
+      "actual": "关闭时早退申诉被拒（NOT_APPEALABLE）；开启同一配置后同一记录可正常提交。两种配置均已验证",
+      "evidence": "server/test/appeal.test.js「早退默认关闭申诉，开启后可申诉」；决策 D08 仍待业务确认",
+      "env": "sim"
+    },
+    "AT-050": {
+      "status": "通过",
+      "actual": "重复点击返回同一单号；驳回后补证重新提交生成新单，两张申诉历史均完整保留",
+      "evidence": "server/test/appeal.test.js「同一记录最多一张活动申诉」「驳回后可补证重新提交」",
+      "env": "sim"
+    },
+    "AT-051": {
+      "status": "通过",
+      "actual": "终审通过后公示 7 天（自实际生效 2026-09-21T05:42:19.686Z 起算，终审时间单独保留）；公示期内平行申诉被拒；到期自动锁定；锁定后自动改判转为辅导员复核任务",
+      "evidence": "server/test/appeal.test.js「终审生效、公示与锁定」全部 7 项；决策 D16/D21/D23",
+      "env": "sim"
+    },
+    "AT-052": {
+      "status": "通过",
+      "actual": "终审时检测到目标记录版本已变更（申诉时 v1，当前 v6）：不覆盖，转辅导员复核，apply_status=failed 并通知学生\"待辅导员确认\"",
+      "evidence": "server/test/appeal.test.js「申诉期间记录被并发更新」",
+      "env": "sim"
+    },
+    "AT-053": {
+      "status": "通过",
+      "actual": "2 名学生各收到本人日报；正文含节次与课程明细，无他人信息",
+      "evidence": "server/test/notify.test.js「学生个人日报」；真实 IM 投递需租户验证（P11）",
+      "env": "tenant"
+    },
+    "AT-054": {
+      "status": "通过",
+      "actual": "同一业务日同一结果版本重复生成：第二次全部命中去重键，消息台账仍只有 1 条",
+      "evidence": "server/test/notify.test.js「相同内容重复生成不重复发送」；message_key 唯一索引",
+      "env": "sim"
+    },
+    "AT-055": {
+      "status": "通过",
+      "actual": "日报正文含「当日数据尚未齐全，结果可能更新」；覆盖状态须辅导员逐班逐日确认后才移除该提示",
+      "evidence": "server/test/notify.test.js「数据未齐必须注明」",
+      "env": "sim"
+    },
+    "AT-056": {
+      "status": "通过",
+      "actual": "当日无任何考勤数据：未向学生发送任何日报，返回 alert_data_manager=true 提醒数据管理员确认是否未导入",
+      "evidence": "server/test/notify.test.js「没有当日数据时不发日报」",
+      "env": "sim"
+    },
+    "AT-057": {
+      "status": "通过",
+      "actual": "发送结果不明：状态记为 unknown、不安排自动重试、不进入下一轮发送；由管理员核对后决定是否补发",
+      "evidence": "server/test/notify.test.js「结果未知单列，不自动重发」",
+      "env": "sim"
+    },
+    "AT-058": {
+      "status": "通过",
+      "actual": "IM 接收人无法映射：登记 IM_RECEIVER_UNRESOLVED 映射异常，接收人字段保持原值，未按姓名搜索代发",
+      "evidence": "adapters/message.js 拒绝无 im_user_id 的发送；server/test/notify.test.js",
+      "env": "sim"
+    },
+    "AT-059": {
+      "status": "通过",
+      "actual": "消息发送失败：考勤结果「旷课」保持生效未回滚，消息进入 failed 并安排重试，站内记录仍可见",
+      "evidence": "server/test/notify.test.js「发送失败进入重试，不回滚考勤」",
+      "env": "sim"
+    },
+    "AT-060": {
+      "status": "通过",
+      "actual": "申诉成立后：明细、详情、个人/班级/学院三级统计全部同步为「正常」，对账零差异",
+      "evidence": "全部汇总来自同一事实表 attendance；domain/stats.js rebuildStatsForDates + reconcile",
+      "env": "sim"
+    },
+    "AT-061": {
+      "status": "通过",
+      "actual": "异常=2（旷课＋迟到＋早退），待核实=1 单列，需关注记录=2（旷课＋待核实，独立命名）；expected_periods 与 attendance_rate 均返回 null",
+      "evidence": "server/test/authz.test.js「统计口径」；决策 D17",
+      "env": "sim"
+    },
+    "AT-062": {
+      "status": "通过",
+      "actual": "任务在租约期内崩溃：重启后回收 1 个过期租约并续做，考勤正确生效为「请假」；再次执行不重复生效（revision 保持 2）",
+      "evidence": "adapters/scheduler.js reclaimExpired + writer.js applied_event_id 幂等",
+      "env": "sim"
+    },
+    "AT-063": {
+      "status": "通过",
+      "actual": "60 万行背景数据、30 并发：7 个真实查询场景全部达标，最慢场景「学院待核实队列（分页）」P95 14.5ms（目标 ≤3000ms）；写入 6,065 行/秒，汇总重建 527ms。查询全部走 keyset 游标分页，不把全表拉进浏览器",
+      "evidence": "docs/volume-results.json runs[0]；scripts/volume.js。本地 SQLite 数字不可外推，WPS 多维表格侧须按 P13 在真实租户重测",
+      "env": "tenant"
+    },
+    "AT-064": {
+      "status": "通过",
+      "actual": "100 万行代表性数据、30 并发：已选查询方式全部达标，最慢场景「学院待核实队列（分页）」P95 7.7ms；与 60 万行相比无明显劣化",
+      "evidence": "docs/volume-results.json runs[1]。该结论仅验证本实现的查询方式在百万行级可用，不代表 WPS 多维表格的百万行能力（P13 待验证）",
+      "env": "tenant"
+    },
+    "AT-065": {
+      "status": "阻塞",
+      "actual": "本地 SQLite 可做文件级备份与恢复，但该用例要验证的是多维表格分区的导出/恢复、附件可用性与关联完整性，依赖真实租户的导出能力与配额（P14），本地无法代替",
+      "evidence": "需 WPS 管理员提供导出/恢复通道后执行；参见 docs/capability-matrix.md P14",
+      "env": "tenant"
+    },
+    "AT-066": {
+      "status": "通过",
+      "actual": "student_profile.source 与 provisional 标记区分 demo/派生与权威名册；接入批次以 source_type/source_system/source_digest 区分来源，统计可按来源排除",
+      "evidence": "schema.sql student_profile.provisional；scripts/seed.js 全部派生数据标记 source=derived_from_attendance、provisional=1",
+      "env": "sim"
+    },
+    "AT-067": {
+      "status": "通过",
+      "actual": "1. 接入 4 条（来源 excel_file）；2. 个人查询返回 4 条；3. 越权访问 3 项全部被服务端拒绝；4. 待核实核对 → 正常；5. 请假批准 → 覆盖刷卡旷课；同一回调重投未二次生效；6. 申诉一审→终审→更正为正常，公示至 2026-09-28；7. 任务中断恢复：回收 1 个过期租约并续做；8. 统计更新：{\"正常\":3,\"旷课\":0,\"迟到\":0,\"早退\":0,\"请假\":1,\"待处理\":0}，对账零差异；9. 日报 1 人，发送 8 成功 / 0 失败；失败未回滚考勤",
+      "evidence": "scripts/acceptance.js AT-067 全链路实跑；真实链路须在 WPS 365 租户以真实身份、表单、轻审批与 IM 重跑一遍才算生产验收",
+      "env": "tenant"
+    }
+  }
+}

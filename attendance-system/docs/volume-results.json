@@ -1,0 +1,32 @@
+{
+  "note": "本文件由 scripts/volume.js 两次实测产生。合成容量数据仅用于查询性能，不参与业务口径验证。本地 SQLite 数字不可外推到 WPS 多维表格，多维表格侧须按 P13 在真实租户重测。",
+  "runs": [
+    {
+      "target": 600000, "actual": 600000, "weeks": 19,
+      "write_rows_per_sec": 6065, "stats_rebuild_ms": 527, "concurrency": 30, "all_pass": true,
+      "scenarios": [
+        {"name": "学生查本人考勤（首页）", "p50_ms": 0.8, "p95_ms": 1.1, "max_ms": 17.6},
+        {"name": "学生按结果筛选", "p50_ms": 1.2, "p95_ms": 1.6, "max_ms": 4.9},
+        {"name": "学生个人汇总", "p50_ms": 0.2, "p95_ms": 0.3, "max_ms": 0.5},
+        {"name": "考勤详情", "p50_ms": 0.4, "p95_ms": 0.5, "max_ms": 9.2},
+        {"name": "管理端班级+日期筛选", "p50_ms": 0.6, "p95_ms": 0.7, "max_ms": 0.8},
+        {"name": "学院待核实队列（分页）", "p50_ms": 8.3, "p95_ms": 14.5, "max_ms": 16.9},
+        {"name": "学院汇总看板", "p50_ms": 0.6, "p95_ms": 0.6, "max_ms": 0.7}
+      ]
+    },
+    {
+      "target": 1000000, "actual": 1000000, "weeks": 32,
+      "write_rows_per_sec": 5629, "stats_rebuild_ms": 637, "concurrency": 30, "all_pass": true,
+      "scenarios": [
+        {"name": "学生查本人考勤（首页）", "p50_ms": 0.8, "p95_ms": 1.1, "max_ms": 4.4},
+        {"name": "学生按结果筛选", "p50_ms": 1.1, "p95_ms": 2.4, "max_ms": 2.8},
+        {"name": "学生个人汇总", "p50_ms": 0.2, "p95_ms": 0.3, "max_ms": 0.5},
+        {"name": "考勤详情", "p50_ms": 0.4, "p95_ms": 0.5, "max_ms": 6.9},
+        {"name": "管理端班级+日期筛选", "p50_ms": 0.7, "p95_ms": 0.7, "max_ms": 4.9},
+        {"name": "学院待核实队列（分页）", "p50_ms": 7.4, "p95_ms": 7.7, "max_ms": 10.3},
+        {"name": "学院汇总看板", "p50_ms": 0.6, "p95_ms": 0.7, "max_ms": 4.6}
+      ]
+    }
+  ],
+  "target_criteria": "60 万条背景数据、30 个并发查询用户时端到端 P95 ≤ 3 秒（docs/baseline/04 §6）"
+}

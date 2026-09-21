@@ -129,9 +129,16 @@ function applyJudgmentSync(attendanceId, ctx) {
   if (ctx.lock) changes.locked_at = nowUtc();
   if (ctx.clearReview) { changes.needs_review = 0; changes.review_reason = null; }
 
+  // 「无变化」必须把复核标记也算进去：
+  // 人工结论与请假冲突时最终结果不变（人工结论优先），但冲突本身必须落库并进入复核，
+  // 否则就成了静默吞掉冲突 —— 03 §2.2 明确禁止。
+  const reviewUnchanged = outcome.needsReview
+    ? record.needs_review === 1 && record.review_reason === outcome.reviewReason
+    : true;
   const unchanged = record.final_judgment === outcome.final
     && record.base_judgment === base.judgment
     && record.judgment_reason === outcome.reason
+    && reviewUnchanged
     && !ctx.publish && !ctx.lock && !ctx.clearReview;
 
   if (unchanged) {

@@ -4,14 +4,18 @@
   "private": true,
   "type": "module",
   "description": "基于 WPS 365 的课堂考勤管理系统（本地全栈仿真实现）",
-  "engines": {"node": ">=22.5.0"},
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "server": "node --no-warnings server/src/index.js",
     "seed": "node --no-warnings scripts/seed.js",
     "ingest": "node --no-warnings scripts/ingest.js",
-    "test": "node --no-warnings --test server/test/",
+    "test": "node --no-warnings --test \"server/test/*.test.js\"",
     "acceptance": "node --no-warnings scripts/acceptance.js",
     "web:dev": "npm --prefix web run dev",
-    "web:build": "npm --prefix web run build"
+    "web:build": "npm --prefix web run build",
+    "volume": "node --no-warnings scripts/volume.js",
+    "report": "node --no-warnings scripts/report.js"
   }
 }
