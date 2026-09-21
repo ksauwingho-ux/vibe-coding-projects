@@ -171,8 +171,22 @@ export function getAttendanceDetail(principal, attendanceId) {
     : [];
   const batch = Table.get('import_batch', record.batch_id);
 
+  // 进行中的申诉包含 submitted/reviewing，以及 approved 但尚未完成回写的单据（03 §5.3）。
+  // 有进行中申诉时不再提供申诉入口，避免学生以为可以再开一张。
+  const activeAppeal = appeals.find((a) => ['submitted', 'reviewing'].includes(a.status)
+    || (a.status === 'approved' && a.apply_status !== 'applied'));
+
+  const base = toListItem(record, principal);
   return {
-    ...toListItem(record, principal),
+    ...base,
+    allowed_actions: activeAppeal
+      ? base.allowed_actions.filter((x) => x !== 'appeal')
+      : base.allowed_actions,
+    active_appeal: activeAppeal ? {
+      appeal_id: activeAppeal.appeal_id,
+      status: activeAppeal.status,
+      stage: activeAppeal.stage,
+    } : null,
     // 原始值永远保留，人工结论不覆盖它
     raw: {
       raw_result: record.raw_result,

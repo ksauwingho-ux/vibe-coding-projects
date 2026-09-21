@@ -168,8 +168,8 @@ export function AttendanceDetail({id, me, onClose, onToast, onChanged}) {
                   <div key={l.leave_id} className="hint">
                     {l.start_date} 至 {l.end_date}
                     {l.periods.length ? ` 第 ${l.periods.join('、')} 节` : '（全天）'}
-                    · {l.approval_status === 'approved' ? '已批准' : l.approval_status}
-                    {l.apply_status !== 'applied' && ' · 考勤同步中'}
+                    · {leaveApprovalLabel(l.approval_status)}
+                    {l.approval_status === 'approved' && l.apply_status !== 'applied' && ' · 考勤同步中'}
                     {l.revoke_status === 'requested' && ' · 撤销待确认（当前仍有效）'}
                   </div>
                 ))}
@@ -200,17 +200,23 @@ export function AttendanceDetail({id, me, onClose, onToast, onChanged}) {
                 <h3 style={{fontSize: 14, marginTop: 16}}>申诉记录</h3>
                 {d.appeals.map((a) => (
                   <div key={a.appeal_id} className="hint">
-                    {formatDate(a.created_at)} · {a.status}
-                    {a.apply_status && a.status === 'approved' && a.apply_status !== 'applied'
-                      && ' · 考勤同步中'}
+                    {formatDate(a.created_at)} · {appealStatusLabel(a)}
                   </div>
                 ))}
               </>
             )}
 
             <div className="dialog-actions">
+              {d.active_appeal && (
+                <span className="hint">
+                  该记录已有进行中的申诉（{appealStageLabel(d.active_appeal)}），结果出来前不再新开申诉。
+                </span>
+              )}
               {d.allowed_actions.includes('appeal') && (
                 <button className="primary" onClick={() => setAppealing(true)}>提交申诉</button>
+              )}
+              {d.public_countdown_days != null && !d.locked_at && (
+                <span className="hint">申诉已成立，公示中。公示期内如有新异议请联系辅导员复核。</span>
               )}
               {d.locked_at && <span className="hint">记录已锁定，如有异议请联系辅导员复核。</span>}
             </div>
@@ -287,6 +293,30 @@ function AppealForm({record, onClose, onDone, onToast}) {
       </form>
     </Modal>
   );
+}
+
+function leaveApprovalLabel(s) {
+  return {
+    submitted: '审批中', approved: '已批准', rejected: '已驳回',
+    cancelled: '已作废', draft: '草稿',
+  }[s] ?? s;
+}
+
+function appealStatusLabel(a) {
+  const map = {
+    submitted: '已提交，待一审', reviewing: '审核中', rejected: '已驳回',
+    withdrawn: '已撤回', locked: '公示结束，已锁定',
+  };
+  if (a.status === 'approved') {
+    if (a.apply_status !== 'applied') return '终审通过，考勤同步中';
+    return a.locked_at ? '已成立，公示结束' : '已成立，公示中';
+  }
+  return map[a.status] ?? a.status;
+}
+
+function appealStageLabel(a) {
+  const stage = {first: '待一审', second: '待终审', counselor: '辅导员代审', done: '已结束'}[a.stage] ?? a.stage;
+  return a.status === 'approved' ? '终审通过，考勤同步中' : stage;
 }
 
 function actionLabel(a) {
