@@ -46,15 +46,19 @@ export const Identity = {
 export const Directory = {
   /**
    * 列出租户内用户。不以显示名作为主键 —— 显示名只用于界面。
-   * 真实环境读 WPS 通讯录；本地读已建立的身份映射。
+   * 真实环境读 WPS 通讯录；本地读 directory_user 投影。
    */
   listUsers({cursor = null, limit = 50} = {}) {
-    return Table.query('identity_link', {
-      where: {tenant_id: TENANT_ID},
-      order: [['link_id', 'ASC']],
+    return Table.query('directory_user', {
+      where: {tenant_id: TENANT_ID, active: 1},
+      order: [['wps_user_id', 'ASC']],
       cursor,
       limit,
     });
+  },
+
+  getUser(wpsUserId) {
+    return Table.get('directory_user', wpsUserId);
   },
 
   /** 由租户用户 ID 找到其学生身份。未映射返回 null，绝不猜学号。 */
