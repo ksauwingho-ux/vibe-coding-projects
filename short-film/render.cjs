@@ -6,14 +6,17 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 
 const outDir = process.argv[2];
 const atIdx = process.argv.indexOf('--at');
+const frIdx = process.argv.indexOf('--frames');
 const fps = atIdx < 0 ? +(process.argv[3] || 30) : 30;
 const secs = atIdx < 0 ? +(process.argv[4] || 30) : 30;
 const workers = atIdx < 0 ? +(process.argv[5] || 4) : 2;
+const WORKERS = frIdx >= 0 ? 4 : workers;
 fs.mkdirSync(outDir, { recursive: true });
 
 (async () => {
   const jobs = [];
   if (atIdx >= 0) process.argv[atIdx + 1].split(',').forEach(s => jobs.push({ t: +s, name: `at_${(+s).toFixed(2).padStart(5, '0')}.png` }));
+  else if (frIdx >= 0) { const [a, b] = process.argv[frIdx + 1].split('-').map(Number); for (let i = a; i <= b; i++) jobs.push({ t: i / 30, name: `f_${String(i).padStart(4, '0')}.png` }); }
   else for (let i = 0; i < fps * secs; i++) jobs.push({ t: i / fps, name: `f_${String(i).padStart(4, '0')}.png` });
 
   const browser = await chromium.launch({
@@ -35,7 +38,7 @@ fs.mkdirSync(outDir, { recursive: true });
     }
     await page.close();
   }
-  await Promise.all(Array.from({ length: workers }, worker));
+  await Promise.all(Array.from({ length: WORKERS }, worker));
   await browser.close();
   console.log('done', jobs.length, 'frames in', ((Date.now() - t0) / 1000).toFixed(1), 's');
 })();

@@ -443,11 +443,15 @@ function text(str, x, y, size, alpha, o = {}) {
   ctx.letterSpacing = sp + 'px';
   const dx = (o.align || 'center') === 'center' ? sp / 2 : 0;
   ctx.globalAlpha = alpha;
-  if (o.halo !== false) {
+  if (o.halo !== false && o.band !== false) {            // 字幕底下的柔和压暗底板
     const bw = Math.min(W * 0.9, (str.length * (size + sp)) * 0.62 + 200), bh = size * 1.9;
     ctx.save(); ctx.translate(x, y); ctx.scale(bw / bh, 1);
     const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, bh); bg.addColorStop(0, 'rgba(0,0,0,0.55)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = bg; ctx.fillRect(-bh, -bh, bh * 2, bh * 2); ctx.restore(); ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = size * 0.55; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(str, x + dx, y); }
+    ctx.fillStyle = bg; ctx.fillRect(-bh, -bh, bh * 2, bh * 2); ctx.restore();
+  }
+  if (o.halo !== false) {                                // 字形周围的暗色光晕
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = size * 0.55; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(str, x + dx, y);
+  }
   ctx.shadowColor = o.glow || 'rgba(160,200,255,0.55)'; ctx.shadowBlur = o.glowBlur === undefined ? size * 0.35 : o.glowBlur;
   ctx.fillStyle = o.color || '#fff';
   ctx.fillText(str, x + dx, y);
@@ -460,7 +464,7 @@ function drawText(t) {
   text('起初，什么都没有。', CX, 880, 52, fadeWin(t, 4.0, 7.4, 0.9, 0.8) * 0.95, { spacing: 18, weight: 400 });
   // 2. 爆炸之后
   const a2 = fadeWin(t, 10.7, 13.5, 0.5, 0.7);
-  text('138 亿年前', CX, CY - 8, 108, a2, { spacing: 26, weight: 200, glowBlur: 40 });
+  text('138 亿年前', CX, CY - 8, 108, a2, { spacing: 26, weight: 200, glowBlur: 40, band: false });
   const a3 = fadeWin(t, 13.4, 16.4, 0.7, 0.8);
   text('万物，由此而始。', CX, 900, 58, a3, { spacing: 22, weight: 300 });
   // 3. 数字
