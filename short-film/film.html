@@ -1,0 +1,576 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>从无到有 · GENESIS</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+/* ============================================================
+   从无到有 · GENESIS —— 30 秒
+   renderFrame(t) 是纯函数：同一个 t 永远画出同一帧，方便并行渲染。
+   时间线
+     0.0  黑场，一个光点，心跳
+     0.8  心跳加速，尘埃被引力卷入（第一幕：坍缩）
+     8.5  一切塌缩成一个点 → 8.7~9.0 彻底安静
+     9.0  BANG（第二幕：大爆炸）
+    11.0  星系在余烬中成形（第三幕：宇宙）
+    19.0  镜头加速拉远，穿过星系团，进入宇宙网
+    24.6  一切安静，只剩一个点：你在这里（第四幕）
+    28.0  标题
+   ============================================================ */
+const W = 1920, H = 1080, CX = W / 2, CY = H / 2, TAU = Math.PI * 2;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d', { alpha: false });
+
+/* ---------- 工具 ---------- */
+function rng(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rnd = rng(20261002);
+const gauss = () => { let u = 0; for (let i = 0; i < 4; i++) u += rnd(); return (u - 2) * 1.732; };
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sm = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const ease = (a, b, t) => sm((t - a) / (b - a));
+const mix3 = (c1, c2, t) => [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const FONT = '"Noto Sans CJK SC","Noto Sans SC","WenQuanYi Zen Hei",sans-serif';
+
+/* 心跳时刻（音频脚本里用同一个公式） */
+const BEATS = []; { let tb = 0.8, iv = 1.05; while (tb < 8.45) { BEATS.push(tb); tb += iv; iv = Math.max(0.26, iv * 0.88); } }
+
+/* ---------- 光斑贴图 ---------- */
+function makeGlow(size, col) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), r = size / 2;
+  const gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, rgba(col, 1)); gr.addColorStop(0.1, rgba(col, 0.6));
+  gr.addColorStop(0.3, rgba(col, 0.2)); gr.addColorStop(0.65, rgba(col, 0.045));
+  gr.addColorStop(1, rgba(col, 0));
+  g.fillStyle = gr; g.fillRect(0, 0, size, size); return c;
+}
+const GLOW = {
+  white: makeGlow(256, [255, 255, 255]), warm: makeGlow(256, [255, 205, 140]),
+  cool: makeGlow(256, [150, 190, 255]), pink: makeGlow(256, [255, 130, 190]),
+  gold: makeGlow(256, [255, 225, 160]), blue: makeGlow(256, [110, 150, 255]),
+};
+
+/* ============================================================
+   第一幕：坍缩的尘埃（18 组 = 6 种色温 × 3 档亮度，每组一次 stroke）
+   ============================================================ */
+const BR = [0.38, 0.72, 1.0], LW = [1.0, 1.5, 2.2], GW = [0.5, 0.32, 0.18];
+const DUST_COL = [[150, 190, 255], [190, 215, 255], [235, 240, 255], [255, 235, 210], [255, 205, 150], [255, 170, 120]];
+const dust = []; {
+  const N = 17000;
+  for (let h = 0; h < 6; h++) for (let b = 0; b < 3; b++) {
+    const n = Math.round(N / 6 * GW[b]);
+    const g = { n, r0: new Float32Array(n), th0: new Float32Array(n), ta: new Float32Array(n), ts: new Float32Array(n), sp: new Float32Array(n) };
+    for (let i = 0; i < n; i++) {
+      g.r0[i] = 650 + Math.pow(rnd(), 0.8) * 1250;
+      g.th0[i] = rnd() * TAU;
+      const ta = 3.6 + 4.9 * Math.pow(rnd(), 0.5);
+      g.ta[i] = ta; g.ts[i] = Math.max(1.0, ta - 3.2 - rnd() * 2.4);
+      g.sp[i] = 1.2 + rnd() * 2.0;
+    }
+    dust.push(g);
+  }
+}
+const bgStars = []; for (let i = 0; i < 650; i++) bgStars.push([rnd() * W, rnd() * H, 0.5 + rnd() * 1.2, rnd() * TAU, 0.25 + rnd() * 0.75]);
+
+function drawBackdrop(t, a) {
+  if (a <= 0) return;
+  ctx.fillStyle = '#fff';
+  for (const s of bgStars) {
+    const tw = 0.65 + 0.35 * Math.sin(t * 1.7 + s[3]);
+    ctx.globalAlpha = a * s[4] * tw * 0.8;
+    ctx.fillRect(s[0], s[1], s[2], s[2]);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawDust(t) {
+  const aG = ease(1.0, 5.0, t); if (aG <= 0) return;
+  const toWhite = ease(5.2, 8.55, t) * 0.85;
+  ctx.lineCap = 'round';
+  for (let gi = 0; gi < 18; gi++) {
+    const g = dust[gi], b = gi % 3;
+    ctx.strokeStyle = rgba(mix3(DUST_COL[gi / 3 | 0], [255, 255, 255], toWhite), aG * BR[b]);
+    ctx.lineWidth = LW[b];
+    ctx.beginPath();
+    for (let i = 0; i < g.n; i++) {
+      const ts = g.ts[i], ta = g.ta[i];
+      if (t < ts || t >= ta) continue;
+      const d = ta - ts, q = (t - ts) / d;
+      const dt = 0.05 + 0.07 * q * q * q;
+      const qp = Math.max(0, (t - dt - ts) / d);
+      const r1 = g.r0[i] * (1 - q * q), r0 = g.r0[i] * (1 - qp * qp);
+      const a1 = g.th0[i] + g.sp[i] * Math.pow(q, 1.4), a0 = g.th0[i] + g.sp[i] * Math.pow(qp, 1.4);
+      ctx.moveTo(CX + r0 * Math.cos(a0), CY + r0 * Math.sin(a0));
+      ctx.lineTo(CX + r1 * Math.cos(a1), CY + r1 * Math.sin(a1));
+    }
+    ctx.stroke();
+  }
+}
+
+function drawCore1(t) {
+  if (t < 0.5 || t >= 9.0) return;
+  const p = clamp(t / 8.6);
+  let rc = 4 + 90 * Math.pow(p, 3.0);
+  let pulse = 0;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < BEATS.length; k++) {
+    const age = t - BEATS[k]; if (age < 0 || age > 0.75 || t > 8.55) continue;
+    const inten = lerp(0.25, 1, BEATS[k] / 8.5);
+    pulse = Math.max(pulse, Math.exp(-age * 8) * inten);
+    const rr = 30 + 560 * Math.pow(age / 0.75, 0.6);
+    ctx.strokeStyle = rgba([200, 220, 255], 0.30 * inten * Math.pow(1 - age / 0.75, 2));
+    ctx.lineWidth = 1.5 + 5 * (1 - age / 0.75);
+    ctx.beginPath(); ctx.arc(CX, CY, rr, 0, TAU); ctx.stroke();
+  }
+  const fadeIn = ease(0.5, 1.0, t);
+  let jitter = 0;
+  if (t > 8.52) {                       // 塌缩成一个点
+    const c = ease(8.52, 8.70, t);
+    rc = lerp(rc, 4, Math.pow(c, 0.5)); pulse *= 1 - c;
+    if (t > 8.70) jitter = 0.7;
+  }
+  const strobe = t > 8.0 && t < 8.52 ? 0.75 + 0.25 * Math.sin(t * 160) : 1;
+  const R = rc * (1 + pulse * 0.9) * strobe;
+  ctx.globalAlpha = fadeIn * clamp(0.35 + 0.65 * p + pulse * 0.5, 0, 1);
+  ctx.drawImage(GLOW.white, CX - R * 2.2, CY - R * 2.2, R * 4.4, R * 4.4);
+  ctx.drawImage(GLOW.cool, CX - R * 4.5, CY - R * 4.5, R * 9, R * 9);
+  // 变形镜头光条
+  ctx.globalAlpha = fadeIn * clamp(0.1 + 0.8 * Math.pow(p, 2) + pulse * 0.3, 0, 1) * (t > 8.52 ? 1 - ease(8.52, 8.70, t) : 1);
+  ctx.drawImage(GLOW.white, CX - R * 14, CY - R * 0.28, R * 28, R * 0.56);
+  // 针尖
+  ctx.globalAlpha = fadeIn;
+  ctx.fillStyle = '#fff';
+  const jx = jitter * Math.sin(t * 211), jy = jitter * Math.cos(t * 187);
+  ctx.beginPath(); ctx.arc(CX + jx, CY + jy, Math.max(1.3, R * 0.07), 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+/* ============================================================
+   第二幕：爆炸
+   ============================================================ */
+const blast = []; {
+  const N = 16000;
+  for (let h = 0; h < 6; h++) for (let b = 0; b < 3; b++) {
+    const n = Math.round(N / 6 * GW[b]);
+    const g = { n, c: new Float32Array(n), s: new Float32Array(n), v0: new Float32Array(n), k: new Float32Array(n) };
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * TAU;
+      g.c[i] = Math.cos(a); g.s[i] = Math.sin(a);
+      g.v0[i] = 160 + 4200 * Math.pow(rnd(), 2.3);
+      g.k[i] = 0.5 + rnd() * 0.22;
+    }
+    blast.push(g);
+  }
+}
+const rays = []; for (let i = 0; i < 140; i++) rays.push({ a: rnd() * TAU, L: 300 + rnd() * 1500, w: 0.8 + rnd() * 2, s: 4 + rnd() * 6 });
+const BLAST_RAMP = [[0, [255, 250, 235]], [0.5, [255, 225, 150]], [1.6, [255, 160, 70]], [3.2, [255, 80, 140]], [5.5, [120, 90, 255]], [8, [60, 110, 255]]];
+function blastColor(u) {
+  u = Math.max(0, u);
+  for (let i = 1; i < BLAST_RAMP.length; i++) if (u <= BLAST_RAMP[i][0]) {
+    const [t0, c0] = BLAST_RAMP[i - 1], [t1, c1] = BLAST_RAMP[i];
+    return mix3(c0, c1, (u - t0) / (t1 - t0));
+  }
+  return BLAST_RAMP[BLAST_RAMP.length - 1][1];
+}
+
+function drawBlast(t) {
+  const tau = t - 9; if (tau < 0 || tau > 8) return;
+  const fade = Math.exp(-tau / 5.0) * (1 - ease(6.2, 8, tau));
+  const dt = 0.035 + 0.09 * Math.exp(-tau * 2.5);
+  const tp = Math.max(0, tau - dt);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  for (let gi = 0; gi < 18; gi++) {
+    const g = blast[gi], b = gi % 3, h = gi / 3 | 0;
+    ctx.strokeStyle = rgba(blastColor(tau + (h - 2.5) * 0.38), fade * BR[b]);
+    ctx.lineWidth = LW[b] * (1 + 1.4 * Math.exp(-tau * 3.5));
+    ctx.beginPath();
+    for (let i = 0; i < g.n; i++) {
+      const v = g.v0[i], k = g.k[i];
+      const r1 = v * (1 - Math.exp(-k * tau)) / k;
+      const r0 = v * (1 - Math.exp(-k * tp)) / k;
+      if (r0 > 1250) continue;
+      ctx.moveTo(CX + r0 * g.c[i], CY + r0 * g.s[i]);
+      ctx.lineTo(CX + r1 * g.c[i], CY + r1 * g.s[i]);
+    }
+    ctx.stroke();
+  }
+  // 冲击波
+  for (const d of [0, 0.10, 0.28]) {
+    const a = tau - d; if (a < 0) continue;
+    const rr = 1600 * (1 - Math.exp(-2.1 * a)), w = 46 * Math.exp(-a * 1.9) + 1.5, al = Math.exp(-a * 1.4);
+    ctx.strokeStyle = rgba([255, 200, 150], al * 0.22); ctx.lineWidth = w * 2.6;
+    ctx.beginPath(); ctx.arc(CX, CY, rr, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = rgba([255, 250, 240], al * 0.95); ctx.lineWidth = w * 0.45;
+    ctx.beginPath(); ctx.arc(CX, CY, rr, 0, TAU); ctx.stroke();
+  }
+  // 放射光芒
+  const rayA = 0.5 * Math.exp(-tau * 2.0);
+  if (rayA > 0.01) {
+    ctx.lineWidth = 1.6;
+    for (const r of rays) {
+      const out = r.L * (1 - Math.exp(-tau * r.s));
+      ctx.strokeStyle = rgba([255, 235, 200], rayA * r.w * 0.5);
+      ctx.beginPath(); ctx.moveTo(CX + 40 * Math.cos(r.a), CY + 40 * Math.sin(r.a));
+      ctx.lineTo(CX + out * Math.cos(r.a), CY + out * Math.sin(r.a)); ctx.stroke();
+    }
+  }
+  // 原初火球
+  const nuc = (780 * Math.exp(-tau * 1.0) + 150) * (1 - ease(2, 5.5, tau) * 0.5);
+  const na = 0.95 * (1 - ease(2.5, 5.5, tau));
+  if (na > 0) {
+    ctx.globalAlpha = na;
+    ctx.drawImage(GLOW.warm, CX - nuc * 1.6, CY - nuc * 1.6, nuc * 3.2, nuc * 3.2);
+    ctx.drawImage(GLOW.white, CX - nuc * 0.7, CY - nuc * 0.7, nuc * 1.4, nuc * 1.4);
+    ctx.globalAlpha = na * Math.exp(-tau * 0.7);
+    ctx.drawImage(GLOW.white, CX - nuc * 8, CY - nuc * 0.2, nuc * 16, nuc * 0.4);
+  }
+  ctx.restore();
+}
+
+/* ============================================================
+   第三幕：星系 + 宇宙网
+   ============================================================ */
+const PSI = -0.5, INC = 0.46, OMEGA = 0.19;
+// 镜头缩放（像素/单位），对数空间 PCHIP 插值：慢 → 快 → 缓停
+const KT = [0, 11, 15, 19.2, 22.6, 24.8, 30];
+const KV = [4200, 4200, 760, 430, 9, 2.2, 2.0].map(Math.log);
+const KM = (() => {
+  const n = KT.length, d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d.push((KV[i + 1] - KV[i]) / (KT[i + 1] - KT[i]));
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+  return m;
+})();
+function camP(t) {
+  t = clamp(t, KT[0], KT[KT.length - 1]);
+  let i = 0; while (i < KT.length - 2 && t > KT[i + 1]) i++;
+  const h = KT[i + 1] - KT[i], s = (t - KT[i]) / h, s2 = s * s, s3 = s2 * s;
+  const v = (2 * s3 - 3 * s2 + 1) * KV[i] + (s3 - 2 * s2 + s) * h * KM[i] + (-2 * s3 + 3 * s2) * KV[i + 1] + (s3 - s2) * h * KM[i + 1];
+  return Math.exp(v);
+}
+
+// 星系贴图（俯视的雾气 + 旋臂）
+const haze = (() => {
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+  g.globalCompositeOperation = 'lighter';
+  const R = rng(99), gs = () => { let u = 0; for (let i = 0; i < 4; i++) u += R(); return (u - 2) * 1.732; };
+  const blob = (sp, x, y, r, a) => { g.globalAlpha = a; g.drawImage(sp, x - r, y - r, r * 2, r * 2); };
+  for (let i = 0; i < 2600; i++) {
+    const r = Math.min(1.0, -0.3 * Math.log(1 - R() * 0.96));
+    const arm = (R() < 0.5 ? 0 : Math.PI) + 3.3 * Math.log(1 + r / 0.12) + gs() * 0.2 * (1 - 0.3 * r);
+    const x = S / 2 + Math.cos(arm) * r * 470, y = S / 2 + Math.sin(arm) * r * 470;
+    const sp = r < 0.18 ? GLOW.warm : (R() < 0.14 ? GLOW.pink : (R() < 0.6 ? GLOW.cool : GLOW.blue));
+    blob(sp, x, y, 8 + r * 34 + R() * 14, 0.035 + R() * 0.07);
+  }
+  for (let i = 0; i < 700; i++) {               // 星云亮斑
+    const r = 0.12 + R() * 0.85;
+    const arm = (R() < 0.5 ? 0 : Math.PI) + 3.3 * Math.log(1 + r / 0.12) + gs() * 0.1;
+    blob(R() < 0.5 ? GLOW.pink : GLOW.white, S / 2 + Math.cos(arm) * r * 470, S / 2 + Math.sin(arm) * r * 470, 5 + R() * 9, 0.08 + R() * 0.12);
+  }
+  blob(GLOW.warm, S / 2, S / 2, 170, 0.95);
+  blob(GLOW.gold, S / 2, S / 2, 95, 0.9);
+  blob(GLOW.white, S / 2, S / 2, 42, 0.95);
+  return c;
+})();
+
+const GCOL = [[255, 225, 170], [255, 240, 215], [225, 235, 255], [170, 200, 255], [140, 175, 255], [255, 150, 195]];
+const gal = []; {
+  const N = 40000, buckets = Array.from({ length: 12 }, () => ({ r: [], th: [] }));
+  for (let i = 0; i < N; i++) {
+    let r, th;
+    if (rnd() < 0.2) { r = Math.abs(gauss()) * 0.1; th = rnd() * TAU; }
+    else {
+      r = Math.min(1.05, -0.28 * Math.log(1 - rnd() * 0.95));
+      th = rnd() < 0.72 ? ((rnd() < 0.5 ? 0 : Math.PI) + 3.3 * Math.log(1 + r / 0.12) + gauss() * 0.24 * (1 - 0.2 * r)) : rnd() * TAU;
+    }
+    const col = r < 0.12 ? 0 : r < 0.3 ? (rnd() < 0.5 ? 1 : 2) : (rnd() < 0.09 ? 5 : (rnd() < 0.5 ? 3 : 4));
+    const bk = buckets[col * 2 + (rnd() < 0.45 ? 0 : 1)];
+    bk.r.push(r); bk.th.push(th);
+  }
+  for (const b of buckets) gal.push({ n: b.r.length, r: Float32Array.from(b.r), th: Float32Array.from(b.th) });
+}
+
+// 宇宙网：节点 + 细丝，我们在原点
+const web = (() => {
+  const R = rng(4242), gs = () => { let u = 0; for (let i = 0; i < 4; i++) u += R(); return (u - 2) * 1.732; };
+  const X = 470, Y = 275, nodes = [];
+  for (let i = 0; i < 240; i++) nodes.push([(R() * 2 - 1) * X, (R() * 2 - 1) * Y, 6 + R() * 12, R()]);
+  const segs = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const d = nodes.map((n, j) => [Math.hypot(n[0] - nodes[i][0], n[1] - nodes[i][1]), j]).filter(a => a[1] !== i).sort((a, b) => a[0] - b[0]);
+    for (let k = 0; k < 3; k++) if (d[k][0] < 150) segs.push([i, d[k][1]]);
+  }
+  const N = 34000, buckets = Array.from({ length: 8 }, () => ({ x: [], y: [], rg: [] }));
+  let made = 0;
+  while (made < N) {
+    let x, y, hot;
+    const u = R();
+    if (u < 0.42) { const n = nodes[R() * nodes.length | 0]; const s = n[2] * (R() < 0.2 ? 2.2 : 1); x = n[0] + gs() * s; y = n[1] + gs() * s * 0.8; hot = 0.55 + n[3] * 0.45; }
+    else if (u < 0.9) { const s = segs[R() * segs.length | 0], a = nodes[s[0]], b = nodes[s[1]], f = R(); x = lerp(a[0], b[0], f) + gs() * 3.5; y = lerp(a[1], b[1], f) + gs() * 3.5; hot = 0.2 + R() * 0.3; }
+    else { x = (R() * 2 - 1) * X; y = (R() * 2 - 1) * Y; hot = 0.1; }
+    if (Math.abs(x) > X || Math.abs(y) > Y) continue;
+    const d = Math.hypot(x, y);
+    if (d < 7 + R() * 5) continue;                   // 我们身边是空旷的
+    const col = hot > 0.7 ? 0 : hot > 0.45 ? 1 : hot > 0.28 ? 2 : 3;
+    const bk = buckets[col * 2 + (R() < 0.5 ? 0 : 1)];
+    bk.x.push(x); bk.y.push(y); bk.rg.push(0.22 + Math.pow(R(), 2.2) * 0.9);
+    made++;
+  }
+  return buckets.map(b => ({ n: b.x.length, x: Float32Array.from(b.x), y: Float32Array.from(b.y), rg: Float32Array.from(b.rg) }));
+})();
+const WCOL = [[255, 200, 130], [255, 225, 185], [200, 220, 255], [140, 175, 255]];
+const WSPR = [GLOW.warm, GLOW.gold, GLOW.cool, GLOW.blue];
+
+function drawGalaxy(t, P, alpha) {
+  if (alpha <= 0) return;
+  const cp = Math.cos(PSI), sp = Math.sin(PSI);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  // 雾气
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.95;
+  ctx.translate(CX, CY); ctx.rotate(PSI); ctx.scale(1, INC); ctx.rotate(OMEGA * t);
+  const s = P * 2 / 1024; ctx.scale(s, s);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(haze, -512, -512);
+  ctx.restore();
+  // 恒星
+  const size = clamp(P * 0.0021, 1, 2.8), rot = OMEGA * t;
+  for (let gi = 0; gi < 12; gi++) {
+    const g = gal[gi];
+    ctx.fillStyle = rgba(GCOL[gi >> 1], alpha * (gi & 1 ? 0.5 : 0.95));
+    for (let i = 0; i < g.n; i++) {
+      const r = g.r[i], th = g.th[i] + rot;
+      const x = r * Math.cos(th), y = r * Math.sin(th) * INC;
+      const sx = CX + P * (x * cp - y * sp), sy = CY + P * (x * sp + y * cp);
+      if (sx < -3 || sx > W + 3 || sy < -3 || sy > H + 3) continue;
+      ctx.fillRect(sx, sy, size, size);
+    }
+  }
+  // 远看只是一个点
+  const dotA = ease(60, 8, P) * alpha;
+  if (dotA > 0) {
+    ctx.globalAlpha = dotA;
+    const r = 5 + P * 0.9;
+    ctx.drawImage(GLOW.cool, CX - r * 2, CY - r * 2, r * 4, r * 4);
+    ctx.drawImage(GLOW.white, CX - r * 0.7, CY - r * 0.7, r * 1.4, r * 1.4);
+  }
+  ctx.restore();
+}
+
+function drawWeb(P, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let gi = 0; gi < 8; gi++) {
+    const g = web[gi], col = gi >> 1, dim = gi & 1 ? 0.5 : 0.95;
+    ctx.fillStyle = rgba(WCOL[col], alpha * dim);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < g.n; i++) {
+      const sx = CX + g.x[i] * P, sy = CY + g.y[i] * P;
+      if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue;
+      const sz = g.rg[i] * P * 1.35;
+      if (sz > 3.4) {
+        ctx.globalAlpha = alpha * dim;
+        ctx.drawImage(WSPR[col], sx - sz * 1.4, sy - sz * 1.4, sz * 2.8, sz * 2.8);
+      } else {
+        const z = Math.max(1.15, sz);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(sx - z / 2, sy - z / 2, z, z);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/* ============================================================
+   后期：光晕 / 径向色散 / 变焦模糊 / 暗角
+   ============================================================ */
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const bl0 = mk(480, 270), bl1 = mk(480, 270), bl2 = mk(240, 135), tmp = mk(W, H), tmp2 = mk(W, H);
+const b0 = bl0.getContext('2d'), b1 = bl1.getContext('2d'), b2 = bl2.getContext('2d'), tc = tmp.getContext('2d'), tc2 = tmp2.getContext('2d');
+function bloom(a) {
+  if (a <= 0) return;
+  b0.clearRect(0, 0, 480, 270); b0.drawImage(cv, 0, 0, 480, 270);              // 1/4 分辨率底图
+  b1.clearRect(0, 0, 480, 270); b1.filter = 'blur(3px)'; b1.drawImage(bl0, 0, 0); b1.filter = 'none';   // 紧凑光晕
+  b2.clearRect(0, 0, 240, 135); b2.filter = 'blur(5px)'; b2.drawImage(bl0, 0, 0, 240, 135); b2.filter = 'none'; // 宽光晕
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingQuality = 'high';
+  ctx.globalAlpha = a; ctx.drawImage(bl1, 0, 0, W, H);
+  ctx.globalAlpha = a * 1.1; ctx.drawImage(bl2, 0, 0, W, H);
+  ctx.restore();
+}
+function chroma(px) {
+  if (px < 0.4) return;
+  tc.globalCompositeOperation = 'copy'; tc.drawImage(cv, 0, 0);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const chans = [['#f00', 1 + px / 1100], ['#0f0', 1], ['#00f', 1 - px / 1100]];
+  for (const [col, sc] of chans) {
+    tc2.globalCompositeOperation = 'copy'; tc2.drawImage(tmp, 0, 0);
+    tc2.globalCompositeOperation = 'multiply'; tc2.fillStyle = col; tc2.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(CX, CY); ctx.scale(sc, sc); ctx.drawImage(tmp2, -CX, -CY); ctx.restore();
+  }
+  ctx.restore();
+}
+function zoomBlur(a) {
+  if (a < 0.002) return;
+  tc.globalCompositeOperation = 'copy'; tc.drawImage(cv, 0, 0);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const steps = [[1, 0.34], [1 + a, 0.26], [1 + a * 2, 0.2], [1 + a * 3.2, 0.12], [1 + a * 4.6, 0.08]];
+  for (const [sc, al] of steps) {
+    ctx.globalAlpha = al; ctx.save(); ctx.translate(CX, CY); ctx.scale(sc, sc); ctx.drawImage(tmp, -CX, -CY); ctx.restore();
+  }
+  ctx.restore();
+}
+function vignette(a) {
+  const g = ctx.createRadialGradient(CX, CY, H * 0.35, CX, CY, H * 1.05);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+/* ============================================================
+   字幕
+   ============================================================ */
+function fadeWin(t, a, b, fi = 0.6, fo = 0.6) { return clamp((t - a) / fi) * clamp((b - t) / fo); }
+function text(str, x, y, size, alpha, o = {}) {
+  if (alpha <= 0.003) return;
+  const sp = o.spacing || 0;
+  ctx.save();
+  ctx.font = `${o.weight || 300} ${size}px ${FONT}`;
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
+  ctx.letterSpacing = sp + 'px';
+  const dx = (o.align || 'center') === 'center' ? sp / 2 : 0;
+  ctx.globalAlpha = alpha;
+  if (o.halo !== false) {
+    const bw = Math.min(W * 0.9, (str.length * (size + sp)) * 0.62 + 200), bh = size * 1.9;
+    ctx.save(); ctx.translate(x, y); ctx.scale(bw / bh, 1);
+    const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, bh); bg.addColorStop(0, 'rgba(0,0,0,0.55)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bg; ctx.fillRect(-bh, -bh, bh * 2, bh * 2); ctx.restore(); ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = size * 0.55; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(str, x + dx, y); }
+  ctx.shadowColor = o.glow || 'rgba(160,200,255,0.55)'; ctx.shadowBlur = o.glowBlur === undefined ? size * 0.35 : o.glowBlur;
+  ctx.fillStyle = o.color || '#fff';
+  ctx.fillText(str, x + dx, y);
+  ctx.restore();
+}
+const fmtInt = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+function drawText(t) {
+  // 1. 起初
+  text('起初，什么都没有。', CX, 880, 52, fadeWin(t, 4.0, 7.4, 0.9, 0.8) * 0.95, { spacing: 18, weight: 400 });
+  // 2. 爆炸之后
+  const a2 = fadeWin(t, 10.7, 13.5, 0.5, 0.7);
+  text('138 亿年前', CX, CY - 8, 108, a2, { spacing: 26, weight: 200, glowBlur: 40 });
+  const a3 = fadeWin(t, 13.4, 16.4, 0.7, 0.8);
+  text('万物，由此而始。', CX, 900, 58, a3, { spacing: 22, weight: 300 });
+  // 3. 数字
+  const a4 = fadeWin(t, 18.8, 23.0, 0.6, 0.5);
+  if (a4 > 0) {
+    const prog = clamp((t - 18.9) / 3.4), v = 2e11 * (1 - Math.pow(1 - prog, 4));
+    text(fmtInt(v), CX, 872, 112, a4, { spacing: 6, weight: 200, glowBlur: 30 });
+    text('个星系', CX, 972, 50, a4 * ease(19.4, 20.0, t), { spacing: 30, weight: 300 });
+  }
+  const a5 = fadeWin(t, 21.2, 24.4, 0.7, 0.7);
+  text('每一个，都藏着数千亿颗恒星。', CX, 200, 46, a5, { spacing: 14, weight: 300 });
+  // 4. 你在这里
+  text('而你，就在这里。', CX, 905, 66, fadeWin(t, 25.3, 27.45, 0.9, 0.5), { spacing: 24, weight: 300, glowBlur: 30 });
+  // 5. 标题
+  if (t >= 28.0) {
+    const k = t - 28.0, a = clamp(k / 0.35) * (1 - ease(29.55, 30.0, t));
+    const sp = lerp(150, 62, 1 - Math.pow(1 - clamp(k / 1.9), 3));
+    text('从无到有', CX, CY - 14, 190, a, { spacing: sp, weight: 200, glow: 'rgba(170,205,255,0.9)', glowBlur: 70, halo: false });
+    const lw = 560 * ease(28.3, 29.0, t);
+    ctx.save(); ctx.globalAlpha = a * 0.7; ctx.fillStyle = '#cfe0ff'; ctx.fillRect(CX - lw, CY + 100, lw * 2, 1.5); ctx.restore();
+    text('FROM  NOTHING  TO  EVERYTHING', CX, CY + 150, 30, a * ease(28.6, 29.2, t) * 0.9, { spacing: 18, weight: 300, glowBlur: 12, halo: false });
+  }
+}
+
+function drawReticle(t) {
+  const k = t - 24.6; if (k < 0 || t > 27.7) return;
+  const a = clamp(k / 0.5) * (1 - ease(27.2, 27.7, t));
+  const rr = lerp(180, 30, 1 - Math.pow(1 - clamp(k / 1.3), 3)) + 2.5 * Math.sin(t * 5);
+  ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(190,220,255,0.9)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(CX, CY, rr, 0, TAU); ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    const an = i * Math.PI / 2 + Math.PI / 4;
+    ctx.beginPath(); ctx.moveTo(CX + (rr + 6) * Math.cos(an), CY + (rr + 6) * Math.sin(an)); ctx.lineTo(CX + (rr + 20) * Math.cos(an), CY + (rr + 20) * Math.sin(an)); ctx.stroke();
+  }
+  const lx = CX + 190 * ease(25.4, 26.2, t), la = ease(25.8, 26.4, t) * a;
+  ctx.globalAlpha = la; ctx.beginPath(); ctx.moveTo(CX + rr + 22, CY - rr - 22); ctx.lineTo(CX + 150, CY - 150); ctx.lineTo(CX + 150 + 230 * ease(25.9, 26.5, t), CY - 150); ctx.stroke();
+  ctx.restore();
+  text('YOU ARE HERE', CX + 160, CY - 176, 26, la * 0.95, { align: 'left', spacing: 8, weight: 300, glowBlur: 10, halo: false });
+  text('银河系 · 猎户臂', CX + 160, CY - 130, 22, la * 0.7, { align: 'left', spacing: 6, weight: 300, glowBlur: 0, halo: false });
+}
+
+/* ============================================================
+   主渲染
+   ============================================================ */
+function shakeAmp(t) {
+  if (t < 9) return 0.4 + 9 * Math.pow(ease(4.5, 8.55, t), 2);
+  if (t < 9.0 + 0.001) return 0;
+  const tau = t - 9; return 46 * Math.exp(-tau * 3.2) + 1.2 * Math.exp(-tau * 0.4);
+}
+
+window.renderFrame = function (t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+  const hold = t >= 27.6;                    // 27.6~28.0：黑场，只等标题
+  // ---- 相机 ----
+  const A = (t > 8.7 && t < 9.0) ? 0.4 : (t >= 27.6 ? 0 : shakeAmp(t));
+  const sx = A * (Math.sin(t * 83.1) + Math.sin(t * 47.7 + 1.3)) * 0.5;
+  const sy = A * (Math.sin(t * 71.3 + 0.6) + Math.sin(t * 39.9 + 2.1)) * 0.5;
+  const zoom = t < 9 ? 1 + 0.10 * ease(0, 8.6, t) : 1 + 0.06 * Math.exp(-(t - 9) * 1.6);
+  ctx.save();
+  ctx.translate(CX + sx, CY + sy); ctx.scale(zoom, zoom); ctx.translate(-CX, -CY);
+  ctx.globalCompositeOperation = 'lighter';
+
+  if (!hold) {
+    const P = camP(t);
+    // 背景星
+    drawBackdrop(t, ease(0.3, 2.5, t) * (1 - ease(19.5, 22, t)) * (t < 8.7 || t >= 9 ? 1 : 0));
+    if (t < 8.7) drawDust(t);
+    drawCore1(t);
+    if (t >= 9) drawBlast(t);
+    // 宇宙
+    const gA = ease(10.8, 14.2, t);
+    if (t >= 10.8) {
+      const webA = (1 - ease(24.6, 27.2, t) * 0.62) * ease(13.5, 17, t);
+      drawWeb(P, webA);
+      drawGalaxy(t, P, gA * (1 - ease(26.8, 27.5, t) * 0.5));
+    }
+    // 重置到你在这里：一个孤独的蓝点
+  }
+  ctx.restore();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // ---- 后期 ----
+  const warp = hold ? 0 : ease(19.2, 21.0, t) * (1 - ease(22.6, 24.4, t)) * 0.016;
+  zoomBlur(warp);
+  const tau = t - 9;
+  let bl = 0.62;
+  if (tau > 0 && tau < 3) bl += 0.55 * Math.exp(-tau * 1.5);
+  bloom(hold ? 0 : bl);
+  const ca = (tau > 0 ? 16 * Math.exp(-tau * 2.3) : 0) + (t > 8 && t < 8.7 ? 3 : 0) + (warp > 0 ? warp * 120 : 0) + 0.8;
+  chroma(ca);
+
+  vignette(lerp(0.55, 0.78, ease(24.6, 27, t)));
+  // 白闪（在暗角之后，才是真正的纯白）
+  if (tau >= 0 && tau < 2) {
+    const fl = tau < 0.04 ? 1 : Math.exp(-(tau - 0.04) / 0.2);
+    ctx.fillStyle = `rgba(255,255,255,${clamp(fl)})`; ctx.fillRect(0, 0, W, H);
+  }
+
+  // 你在这里的蓝点标记
+  drawReticle(t);
+  drawText(t);
+
+  // 开场/收尾淡入淡出（整体）
+  if (t < 0.3) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.3})`; ctx.fillRect(0, 0, W, H); }
+  if (t > 27.15 && t < 27.65) { ctx.fillStyle = `rgba(0,0,0,${ease(27.15, 27.65, t)})`; ctx.fillRect(0, 0, W, H); }
+  if (t >= 27.65 && t < 28.0) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); drawText(t); }
+};
+
+window.renderFrame(0);
+</script>
